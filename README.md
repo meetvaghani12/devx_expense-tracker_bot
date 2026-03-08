@@ -484,3 +484,8 @@ MIT — do whatever you want with it.
 <div align="center">
   Built with Python 🐍 · Deployed on Azure ☁️ · Powered by Supabase 🗄️
 </div>
+
+
+<div align="center">
+  Built by Meet Vaghani
+</div>
