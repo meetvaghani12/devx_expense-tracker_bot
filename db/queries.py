@@ -194,32 +194,30 @@ def get_user_splits(user_id: str):
 
 def settle_between(payer_id: str, receiver_id: str, amount: float, method: str = "manual"):
     """
-    Mark splits as settled when payer pays receiver up to `amount`.
-    Records a settlement entry and marks individual splits as settled.
+    Mark ALL unsettled splits between payer and receiver as settled.
+    The `amount` is the net payment (from simplify_debts) — it clears the whole
+    relationship between the two people, so all splits are marked settled.
     """
     db = get_client()
+    now = datetime.now(timezone.utc).isoformat()
 
-    # Find unsettled splits: payer owes receiver
+    # Mark all splits where payer owes receiver (payer's splits in receiver's expenses)
     expenses_by_receiver = db.table("expenses").select("id").eq("paid_by", receiver_id).execute().data or []
-    exp_ids = [e["id"] for e in expenses_by_receiver]
+    exp_ids_receiver = [e["id"] for e in expenses_by_receiver]
+    if exp_ids_receiver:
+        splits_payer_owes = db.table("expense_splits").select("id").eq("user_id", payer_id).eq("is_settled", False).in_("expense_id", exp_ids_receiver).execute().data or []
+        ids = [s["id"] for s in splits_payer_owes]
+        if ids:
+            db.table("expense_splits").update({"is_settled": True, "settled_at": now}).in_("id", ids).execute()
 
-    settled_amount = 0.0
-    if exp_ids:
-        splits = db.table("expense_splits").select("id, amount_owed").eq("user_id", payer_id).eq("is_settled", False).in_("expense_id", exp_ids).order("amount_owed").execute().data or []
-
-        to_settle_ids = []
-        remaining = amount
-        for s in splits:
-            if remaining <= 0:
-                break
-            if float(s["amount_owed"]) <= remaining + 0.01:
-                to_settle_ids.append(s["id"])
-                remaining -= float(s["amount_owed"])
-                settled_amount += float(s["amount_owed"])
-
-        if to_settle_ids:
-            now = datetime.now(timezone.utc).isoformat()
-            db.table("expense_splits").update({"is_settled": True, "settled_at": now}).in_("id", to_settle_ids).execute()
+    # Also mark splits where receiver owes payer (receiver's splits in payer's expenses)
+    expenses_by_payer = db.table("expenses").select("id").eq("paid_by", payer_id).execute().data or []
+    exp_ids_payer = [e["id"] for e in expenses_by_payer]
+    if exp_ids_payer:
+        splits_receiver_owes = db.table("expense_splits").select("id").eq("user_id", receiver_id).eq("is_settled", False).in_("expense_id", exp_ids_payer).execute().data or []
+        ids = [s["id"] for s in splits_receiver_owes]
+        if ids:
+            db.table("expense_splits").update({"is_settled": True, "settled_at": now}).in_("id", ids).execute()
 
     # Record settlement
     res = db.table("settlements").insert({

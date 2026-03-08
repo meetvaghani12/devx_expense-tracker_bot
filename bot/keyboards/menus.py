@@ -82,12 +82,11 @@ def confirm_keyboard(confirm_data: str = "confirm_expense"):
 
 
 def settle_actions_keyboard(transactions: list):
-    """Show each suggested settlement as a button."""
+    """Show each suggested settlement as a button. No Back button — added by caller."""
     keyboard = []
     for i, t in enumerate(transactions):
         label = f"{t['from_name']} → {t['to_name']}: ₹{t['amount']:.2f}"
         keyboard.append([InlineKeyboardButton(f"✔️ {label}", callback_data=f"do_settle_{i}")])
-    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="back_main")])
     return InlineKeyboardMarkup(keyboard)
 
 

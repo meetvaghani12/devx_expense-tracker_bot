@@ -45,7 +45,7 @@ async def settle_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = settle_actions_keyboard(transactions)
     full_keyboard = InlineKeyboardMarkup(
-        keyboard.inline_keyboard
+        list(keyboard.inline_keyboard)
         + [[InlineKeyboardButton("✏️ Manual Settle", callback_data="manual_settle")]]
         + [[InlineKeyboardButton("🔙 Back", callback_data="back_main")]]
     )
@@ -59,22 +59,19 @@ async def settle_up(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def do_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Mark a suggested settlement as done."""
+    """Mark a suggested settlement as done, then show remaining ones."""
     query = update.callback_query
     await query.answer()
 
     idx = int(query.data.replace("do_settle_", ""))
-    transactions = context.user_data.get("settle_transactions", [])
+
+    # Always re-fetch fresh transactions — never rely on stale user_data
+    debts = queries.get_pairwise_debts()
+    all_users = queries.get_all_users()
+    transactions = simplify_debts(debts, {u["id"]: u for u in all_users})
 
     if idx >= len(transactions):
-        # Transactions may have been lost (e.g. bot restart) — re-fetch
-        debts = queries.get_pairwise_debts()
-        all_users = queries.get_all_users()
-        transactions = simplify_debts(debts, {u["id"]: u for u in all_users})
-        context.user_data["settle_transactions"] = transactions
-
-    if idx >= len(transactions):
-        await query.edit_message_text("❌ Settlement not found. Please use /settle again.")
+        await query.edit_message_text("❌ Settlement not found. Use /settle to refresh.")
         return
 
     t = transactions[idx]
@@ -90,14 +87,38 @@ async def do_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     queries.settle_between(payer_id, receiver_id, amount, method="auto")
     logger.info(f"Settlement recorded: {t['from_name']} → {t['to_name']} ₹{amount}")
 
-    await query.edit_message_text(
-        f"✅ *Settlement Recorded!*\n\n"
-        f"*{t['from_name']}* paid *₹{amount:.2f}* to *{t['to_name']}*",
-        parse_mode="Markdown",
-        reply_markup=back_keyboard(),
-    )
+    # Notify receiver
     await notify_settlement(bot=context.bot, payer_name=t["from_name"], receiver=receiver_user, amount=amount)
-    context.user_data.pop("settle_transactions", None)
+
+    # Re-fetch remaining debts and show them immediately
+    remaining_debts = queries.get_pairwise_debts()
+    remaining = simplify_debts(remaining_debts, {u["id"]: u for u in all_users})
+    context.user_data["settle_transactions"] = remaining
+
+    if not remaining:
+        await query.edit_message_text(
+            f"✅ *Settlement Recorded!*\n\n"
+            f"*{t['from_name']}* paid *₹{amount:.2f}* to *{t['to_name']}*\n\n"
+            f"🎉 All debts are settled!",
+            parse_mode="Markdown",
+            reply_markup=back_keyboard(),
+        )
+    else:
+        # Show next settlements without making user press Settle Up again
+        summary = format_settle_suggestions(remaining)
+        kb = settle_actions_keyboard(remaining)
+        full_keyboard = InlineKeyboardMarkup(
+            list(kb.inline_keyboard)
+            + [[InlineKeyboardButton("✏️ Manual Settle", callback_data="manual_settle")]]
+            + [[InlineKeyboardButton("🔙 Back", callback_data="back_main")]]
+        )
+        await query.edit_message_text(
+            f"✅ *Settled:* {t['from_name']} → {t['to_name']} ₹{amount:.2f}\n\n"
+            f"📋 *Remaining:*\n{summary}\n\n"
+            f"_Tap to settle next or go back._",
+            parse_mode="Markdown",
+            reply_markup=full_keyboard,
+        )
 
 
 async def manual_settle(update: Update, context: ContextTypes.DEFAULT_TYPE):

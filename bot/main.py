@@ -92,47 +92,37 @@ def build_application():
         allow_reentry=True,
     )
 
-    # ── Settle conversation ───────────────────────────────────────────────────
-    settle_conv = ConversationHandler(
+    # ── Manual settle amount — only text input step needs ConversationHandler ──
+    manual_settle_conv = ConversationHandler(
         per_message=False,
-        entry_points=[
-            CommandHandler("settle", settle_up),
-            CallbackQueryHandler(settle_up, pattern="^settle_up$"),
-        ],
+        entry_points=[CallbackQueryHandler(settle_select_receiver, pattern="^settle_recv_")],
         states={
-            SETTLE_CONFIRM: [
-                CallbackQueryHandler(do_settle, pattern="^do_settle_"),
-                CallbackQueryHandler(manual_settle, pattern="^manual_settle$"),
-                CallbackQueryHandler(cancel, pattern="^back_main$"),
-            ],
-            SETTLE_SELECT_RECEIVER: [
-                CallbackQueryHandler(settle_select_receiver, pattern="^settle_recv_"),
-                CallbackQueryHandler(cancel, pattern="^cancel$"),
-            ],
-            SETTLE_ENTER_AMOUNT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, settle_enter_amount),
-            ],
+            SETTLE_ENTER_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, settle_enter_amount)],
         },
-        fallbacks=[
-            CommandHandler("cancel", cancel),
-            CallbackQueryHandler(cancel, pattern="^cancel$"),
-        ],
+        fallbacks=[CommandHandler("cancel", cancel)],
         allow_reentry=True,
     )
 
     # ── Register all handlers ─────────────────────────────────────────────────
     app.add_handler(reg_conv)
     app.add_handler(expense_conv)
-    app.add_handler(settle_conv)
+    app.add_handler(manual_settle_conv)
 
     # Simple commands
     app.add_handler(CommandHandler("menu", menu))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("settle", settle_up))
     app.add_handler(CommandHandler("balance", my_balance))
     app.add_handler(CommandHandler("balanceall", all_balances))
     app.add_handler(CommandHandler("history", history))
     app.add_handler(CommandHandler("report", report))
     app.add_handler(CommandHandler("cancel", cancel))
+
+    # ── Settle callbacks — direct handlers, no ConversationHandler ────────────
+    app.add_handler(CallbackQueryHandler(settle_up, pattern="^settle_up$"))
+    app.add_handler(CallbackQueryHandler(do_settle, pattern="^do_settle_"))
+    app.add_handler(CallbackQueryHandler(manual_settle, pattern="^manual_settle$"))
+    app.add_handler(CallbackQueryHandler(confirm_manual_settle, pattern="^confirm_manual_settle$"))
 
     # Callback queries for main menu buttons
     app.add_handler(CallbackQueryHandler(my_balance, pattern="^my_balance$"))
