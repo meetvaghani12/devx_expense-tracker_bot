@@ -484,8 +484,12 @@ MIT — do whatever you want with it.
 <div align="center">
   Built with Python 🐍 · Deployed on Azure ☁️ · Powered by Supabase 🗄️
 </div>
+<div align="center">
+  <img src="https://img.shields.io/badge/Version-1.0.0-blue">
+</div>
+<div>
 
-
+</div>
 <div align="center">
   Built by Meet Vaghani
 </div>
