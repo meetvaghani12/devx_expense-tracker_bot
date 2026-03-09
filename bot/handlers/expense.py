@@ -55,6 +55,13 @@ async def got_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if amount <= 0:
             raise ValueError
     except ValueError:
+        # If it looks like a natural-language sentence, escape the guided flow and
+        # run the NL pipeline instead (user probably typed "I paid 500 for dinner…")
+        if len(text.split()) > 2:
+            context.user_data.clear()
+            from bot.handlers.nl import process_nl_text
+            await process_nl_text(update.message.text.strip(), update, context)
+            return ConversationHandler.END
         await update.message.reply_text("❌ Please enter a valid positive number (e.g. 500 or 1250.50):")
         return ADD_AMOUNT
 

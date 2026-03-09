@@ -27,6 +27,12 @@ from bot.handlers.settle import (
     settle_select_receiver, settle_enter_amount, confirm_manual_settle,
 )
 from bot.handlers.report import report
+from bot.handlers.nl import (
+    handle_natural_language,
+    nl_confirm_expense, nl_confirm_settle,
+    nl_cancel, nl_disambiguate,
+)
+from bot.handlers.voice import handle_voice
 from scheduler.jobs import setup_jobs
 
 logging.basicConfig(
@@ -130,6 +136,18 @@ def build_application():
     app.add_handler(CallbackQueryHandler(history, pattern="^history$"))
     app.add_handler(CallbackQueryHandler(report, pattern="^report$"))
     app.add_handler(CallbackQueryHandler(menu, pattern="^back_main$"))
+
+    # ── NL confirmation + disambiguation callbacks ────────────────────────────
+    app.add_handler(CallbackQueryHandler(nl_confirm_expense, pattern="^nl_confirm_expense$"))
+    app.add_handler(CallbackQueryHandler(nl_confirm_settle, pattern="^nl_confirm_settle$"))
+    app.add_handler(CallbackQueryHandler(nl_disambiguate, pattern="^nl_disambig_"))
+    app.add_handler(CallbackQueryHandler(nl_cancel, pattern="^nl_cancel$"))
+
+    # ── Voice messages ────────────────────────────────────────────────────────
+    app.add_handler(MessageHandler(filters.VOICE & ~filters.COMMAND, handle_voice))
+
+    # ── NL free-text catch-all — MUST be registered last ─────────────────────
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_natural_language))
 
     # Setup scheduled jobs
     setup_jobs(app)
