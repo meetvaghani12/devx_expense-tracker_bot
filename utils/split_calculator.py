@@ -1,14 +1,17 @@
-def calculate_equal_split(total: float, members: list) -> list:
+def calculate_equal_split(total: float, members: list, total_people: int = None) -> list:
     """
-    members: list of user_ids (NOT including payer if payer is also a member)
+    members: list of user_ids who OWE money (excludes payer).
+    total_people: total headcount INCLUDING payer. Defaults to len(members).
+    Each member owes total / total_people.
     Returns: list of {"user_id": str, "amount_owed": float}
     """
     if not members:
         return []
-    per_person = round(total / len(members), 2)
-    # Adjust last person for rounding
+    n = total_people if total_people else len(members)
+    per_person = round(total / n, 2)
     splits = [{"user_id": uid, "amount_owed": per_person} for uid in members]
-    diff = round(total - per_person * len(members), 2)
+    # Rounding adjustment goes to the last debtor
+    diff = round(total - per_person * n, 2)
     if diff != 0:
         splits[-1]["amount_owed"] = round(splits[-1]["amount_owed"] + diff, 2)
     return splits

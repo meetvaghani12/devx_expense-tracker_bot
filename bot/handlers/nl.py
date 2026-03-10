@@ -57,6 +57,17 @@ async def handle_natural_language(update: Update, context: ContextTypes.DEFAULT_
 
 async def process_nl_text(text: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Core NL pipeline — called by both text handler and voice handler."""
+    try:
+        await _process_nl_text_inner(text, update, context)
+    except Exception as e:
+        logger.error(f"process_nl_text crashed: {e}", exc_info=True)
+        await update.message.reply_text(
+            f"⚠️ Error: `{type(e).__name__}: {e}`",
+            parse_mode="Markdown",
+        )
+
+
+async def _process_nl_text_inner(text: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = queries.get_user_by_telegram_id(update.effective_user.id)
     if not user:
         await update.message.reply_text("Please /start to register first.")
@@ -76,7 +87,7 @@ async def process_nl_text(text: str, update: Update, context: ContextTypes.DEFAU
         )
     except IntentParseError as e:
         logger.warning(f"NL parse failed: {e}")
-        await _fallback(update)
+        await update.message.reply_text(f"⚠️ Parse error: `{e}`", parse_mode="Markdown")
         return
 
     intent = intent_result.get("intent", "unknown")
@@ -113,7 +124,7 @@ async def process_nl_text(text: str, update: Update, context: ContextTypes.DEFAU
         return
     except Exception as e:
         logger.error(f"Unexpected executor error: {e}", exc_info=True)
-        await _fallback(update)
+        await update.message.reply_text(f"⚠️ Error: `{type(e).__name__}: {e}`", parse_mode="Markdown")
         return
 
     if isinstance(result, AmbiguityRequest):

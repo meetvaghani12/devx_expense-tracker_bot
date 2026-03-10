@@ -28,6 +28,13 @@ Today's date: {date_iso}
 All registered users in this group:
 {users_list}
 
+The user may write in ANY language (English, Gujarati, Hindi, etc.). Understand the message regardless of language and always return the JSON response in English.
+
+NUMBER WORD CONVERSION — always convert spoken/written number words to digits:
+- Gujarati: એક=1, બે=2, ત્રણ=3, ચાર=4, પાંચ=5, છ=6, સાત=7, આઠ=8, નવ=9, દસ=10, વીસ=20, ત્રીસ=30, ચાળીસ=40, પચાસ=50, સાઠ=60, સિત્તેર=70, એંસી=80, નેવું=90, સો=100, બસો=200, ત્રણસો=300, પાંચસો=500, હજાર=1000
+- Hindi: एक=1, दो=2, तीन=3, सौ=100, दो सौ=200, पाँच सौ=500, हज़ार=1000
+- Combine correctly: "બે સો" or "બસો" = 200, "પાંચ સો" = 500, "બે હજાર" = 2000
+
 Extract the user's intent and return ONLY a valid JSON object. No explanation, no markdown, no text outside the JSON.
 
 INTENT TYPES:
@@ -43,16 +50,21 @@ SPLIT TYPES (for add_expense):
 - "percent" : percentage-based split
 
 IMPORTANT RULES:
-1. If sender says "I paid" or "I spent" → paid_by_name = sender's name
-2. "split with X and Y" means payer + X + Y all share it equally (3-way). Debtors in splits = X and Y only (payer is NOT in splits)
-3. "split between X and Y" (not including sender) → only X and Y share it
-4. Match names case-insensitively. Partial matches are ok (e.g. "raj" matches "Rajesh")
-5. If a name matches nobody in the list → add to unresolved_names
-6. If a name could match 2+ users → add to ambiguous_names
+1. If sender says "I paid" or "I spent" (or Gujarati equivalent like "મે ચૂકવ્યા/ભર્યા/ચોકવ્યા") → paid_by_name = sender's name
+2. "split with X and Y" OR "split between X and Y" → payer + X + Y all share equally (3-way). Debtors in splits = X and Y only (payer is NEVER in splits array — their share is implicit)
+3. The payer is ALWAYS included in the headcount. splits array contains only the non-payers.
+4. Match names aggressively — case-insensitive, partial, phonetic, and voice-transcription errors are all ok:
+   - Prefix: "ken" → "Kenil", "mah" → "Mahil"
+   - Phonetic/misspelled: "canil"→"Kenil", "meel"→"Meet", "maheel"→"Mahil", "akk"→"Ak"
+   - Gujarati/Hindi transliteration: "કેનિલ"→"Kenil", "મહિલ"→"Mahil", "મીત"→"Meet"
+   - Always pick the CLOSEST match from the known users list — do NOT give up easily
+5. Only add to unresolved_names if you truly cannot find any similar name in the list
+6. Only add to ambiguous_names if 2+ users are equally close matches
 7. The payer is NEVER included in the splits array
 8. Category must be one of: Food & Dining, Travel & Transport, Accommodation, Groceries, Entertainment, Utilities & Bills, Rent, Medical, Shopping, Other
-9. Infer category from description if not stated (e.g. "dinner" → "Food & Dining", "petrol" → "Travel & Transport")
+9. Infer category from description if not stated (e.g. "dinner" → "Food & Dining", "petrol" → "Travel & Transport"). If category cannot be clearly inferred, use "Other" — do NOT default to "Food & Dining"
 10. For equal split among ALL group members (excluding payer), set include_all_members = true and leave splits empty
+11. CRITICAL — Always convert number words to digits before setting "amount". Examples: બસો/બે સો=200, ત્રણસો=300, ચારસો=400, પાંચસો=500, સો=100, હજાર=1000, બે હજાર=2000. दो सौ=200, पाँच सौ=500. Never guess — if the number word says 200, amount must be 200.0
 
 RETURN THIS EXACT JSON STRUCTURE (use double braces since this is a Python format string):
 {{

@@ -60,7 +60,10 @@ async def got_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(text.split()) > 2:
             context.user_data.clear()
             from bot.handlers.nl import process_nl_text
-            await process_nl_text(update.message.text.strip(), update, context)
+            try:
+                await process_nl_text(update.message.text.strip(), update, context)
+            except Exception:
+                pass  # process_nl_text already shows the error to the user
             return ConversationHandler.END
         await update.message.reply_text("❌ Please enter a valid positive number (e.g. 500 or 1250.50):")
         return ADD_AMOUNT

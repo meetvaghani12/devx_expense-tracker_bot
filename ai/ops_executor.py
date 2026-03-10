@@ -4,6 +4,7 @@ Resolves names to DB user records, validates the intent, builds a
 ConfirmationPayload ready for the user to approve before writing to DB.
 """
 import logging
+from difflib import SequenceMatcher
 from utils.split_calculator import calculate_equal_split, calculate_custom_amount_split, calculate_percentage_split
 
 logger = logging.getLogger(__name__)
@@ -33,24 +34,45 @@ class ConfirmationPayload:
 def resolve_name(name: str, all_users: list) -> list:
     """
     Returns list of matching user dicts for a given name string.
-    Tries: exact → prefix → substring (all case-insensitive).
+    Tries: case-sensitive exact → case-insensitive exact → prefix → substring → fuzzy.
     """
+    # Case-sensitive exact match (handles "meet" vs "Meet" duplicates)
+    exact_cs = [u for u in all_users if u["name"] == name]
+    if len(exact_cs) == 1:
+        return exact_cs
+
     name_lower = name.lower().strip()
 
-    # Exact match
-    exact = [u for u in all_users if u["name"].lower() == name_lower]
-    if exact:
-        return exact
+    # Case-insensitive exact match
+    exact_ci = [u for u in all_users if u["name"].lower() == name_lower]
+    if len(exact_ci) == 1:
+        return exact_ci
+    if len(exact_ci) > 1:
+        return exact_ci
 
     # Prefix match
     prefix = [u for u in all_users if u["name"].lower().startswith(name_lower)]
-    if prefix:
+    if len(prefix) == 1:
+        return prefix
+    if len(prefix) > 1:
         return prefix
 
     # Substring match
     substr = [u for u in all_users if name_lower in u["name"].lower()]
-    if substr:
+    if len(substr) == 1:
         return substr
+    if len(substr) > 1:
+        return substr
+
+    # Fuzzy match — handles voice transcription errors ("canil"→"Kenil", "meel"→"Meet")
+    scores = [
+        (SequenceMatcher(None, name_lower, u["name"].lower()).ratio(), u)
+        for u in all_users
+    ]
+    best_score = max(s for s, _ in scores)
+    if best_score >= 0.5:
+        best_matches = [u for s, u in scores if s == best_score]
+        return best_matches
 
     return []
 
@@ -103,32 +125,32 @@ def _execute_add_expense(data, acting_user, all_users, full_intent):
         raise ExecutorError("Amount must be a positive number.")
 
     amount = float(amount)
-    description = data.get("description", "").strip()
-    if not description:
-        raise ExecutorError("I couldn't understand the description of this expense.")
-
-    category = data.get("category", "Other")
+    description = (data.get("description") or "").strip() or "Expense"
+    category = (data.get("category") or "Other").strip() or "Other"
     split_type = data.get("split_type", "equal")
     include_all = data.get("include_all_members", False)
 
-    # Resolve payer
+    # Resolve payer — if LLM says the sender paid, use acting_user directly
     paid_by_name = data.get("paid_by_name", acting_user["name"])
-    payer_matches = resolve_name(paid_by_name, all_users)
+    if paid_by_name.lower().strip() == acting_user["name"].lower().strip():
+        payer = acting_user
+    else:
+        payer_matches = resolve_name(paid_by_name, all_users)
+        if len(payer_matches) == 0:
+            raise ExecutorError(f"I don't know who '{paid_by_name}' is. Known members: {', '.join(u['name'] for u in all_users)}")
+        if len(payer_matches) > 1:
+            return AmbiguityRequest(
+                ambiguous_name=paid_by_name,
+                candidates=payer_matches,
+                pending_intent={**full_intent, "_resolving": "paid_by"},
+            )
+        payer = payer_matches[0]
 
-    if len(payer_matches) == 0:
-        raise ExecutorError(f"I don't know who '{paid_by_name}' is. Known members: {', '.join(u['name'] for u in all_users)}")
-    if len(payer_matches) > 1:
-        return AmbiguityRequest(
-            ambiguous_name=paid_by_name,
-            candidates=payer_matches,
-            pending_intent={**full_intent, "_resolving": "paid_by"},
-        )
-    payer = payer_matches[0]
-
-    # If include_all_members → all users except payer
+    # If include_all_members → all users, payer included in headcount
     if include_all or (split_type == "equal" and not data.get("splits")):
         debtors = [u for u in all_users if u["id"] != payer["id"]]
-        splits_db = calculate_equal_split(amount, [u["id"] for u in debtors])
+        # total_people = all users (payer pays their share too)
+        splits_db = calculate_equal_split(amount, [u["id"] for u in debtors], total_people=len(all_users))
         splits_display = [
             {"name": u["name"], "amount_owed": s["amount_owed"]}
             for u, s in zip(debtors, splits_db)
@@ -167,10 +189,11 @@ def _execute_add_expense(data, acting_user, all_users, full_intent):
             )
         resolved_splits.append({"user": matches[0], "amount_owed": s.get("amount_owed", 0)})
 
-    # Build DB splits
+    # Build DB splits — payer is always counted in headcount even for named splits
     if split_type == "equal":
         member_ids = [s["user"]["id"] for s in resolved_splits]
-        splits_db = calculate_equal_split(amount, member_ids)
+        # +1 for the payer's own share
+        splits_db = calculate_equal_split(amount, member_ids, total_people=len(member_ids) + 1)
         splits_display = [
             {"name": s["user"]["name"], "amount_owed": db_s["amount_owed"]}
             for s, db_s in zip(resolved_splits, splits_db)
